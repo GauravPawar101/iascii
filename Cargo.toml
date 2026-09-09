@@ -2,6 +2,18 @@
 name = "iascii"
 version = "0.1.0"
 edition = "2024"
+description = "A high-performance, zero-allocation image-to-ASCII/ANSI converter for CLI, web, and server environments."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/GauravPawar101/iascii"
+readme = "README.md"
+keywords = ["ascii", "ansi", "image", "terminal", "wasm"]
+categories = ["command-line-utilities", "multimedia::encoding", "visualization"]
+
+[features]
+default = []
+# Enables concurrent row processing via Rayon
+parallel = ["dep:rayon"]
 
 [dependencies]
 thiserror = "1.0"
+rayon = { version = "1.10", optional = true }
