@@ -47,10 +47,10 @@ into an ANSI-escaped string ready to `print!()`.
 
 ```toml
 [dependencies]
-iascii = { path = "../img2ansi" }        # or a version once published
+iascii = { version = "0.1.0" }        # or a version once published
 
 # Optional: enables `convert_with_pool` and pulls in rayon.
-iascii = { path = "../img2ansi", features = ["parallel"] }
+iascii = { path = "0.1.0", features = ["parallel"] }
 ```
 
 ## Quick start
