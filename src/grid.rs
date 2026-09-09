@@ -136,7 +136,11 @@ impl Grid {
     // --- Restricted Mutable Accessors ---
 
     /// Fetches a mutable reference to a cell at (`x`, `y`).
+    ///
+    /// Not currently called within the crate (`convert.rs`/`parallel.rs` use `row_mut` and
+    /// `as_mut_slice` instead) — kept for API completeness / future callers.
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Cell> {
         if x >= self.width || y >= self.height {
             return None;
@@ -157,7 +161,11 @@ impl Grid {
     }
 
     /// Returns an iterator over mutable row slices (useful for sequential or parallel filling).
+    ///
+    /// Not currently called within the crate (`parallel.rs` chunks `as_mut_slice()` directly
+    /// via rayon's `par_chunks_mut`) — kept for API completeness / future callers.
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn rows_mut(&mut self) -> std::slice::ChunksMut<'_, Cell> {
         self.cells.chunks_mut((self.width as usize).max(1))
     }

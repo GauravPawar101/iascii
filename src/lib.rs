@@ -1,4 +1,4 @@
-//! A high-performance, zero-allocation ASCII and ANSI terminal art converter.
+//! A fast ASCII and ANSI terminal art converter.
 //!
 //! Provides image-to-text rendering, customizable character ramps, perceptual
 //! luminance conversion models, and optional Rayon-powered parallel processing.

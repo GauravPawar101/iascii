@@ -2,7 +2,7 @@
 name = "iascii"
 version = "0.1.0"
 edition = "2024"
-description = "A high-performance, zero-allocation image-to-ASCII/ANSI converter for CLI, web, and server environments."
+description = "A high-performance, image-to-ASCII/ANSI converter for CLI, web, and server environments."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/GauravPawar101/iascii"
 readme = "README.md"

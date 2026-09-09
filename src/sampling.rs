@@ -88,8 +88,13 @@ pub fn fill_row(
     config: &Config,
     ramp_chars: &[char],
 ) {
+    // ramp_chars is normally guaranteed non-empty by Config::build()'s validation, but
+    // fill_row is a public function that can be called directly (e.g. by callers rolling
+    // their own concurrency instead of using `parallel::convert_with_pool`), so it must not
+    // assume that validation ran. saturating_sub avoids an underflow panic on an empty ramp;
+    // if ramp_chars ends up empty, every cell just falls back to a space.
     let is_light = matches!(config.ramp, RampType::Light(_));
-    let max_idx = (ramp_chars.len() - 1) as f32;
+    let max_idx = ramp_chars.len().saturating_sub(1) as f32;
 
     for col in 0..grid_width {
         let (x_start, x_end, y_start, y_end) =
@@ -107,9 +112,10 @@ pub fn fill_row(
 
         let lum = lum.clamp(0.0, 1.0);
         let idx = (lum * max_idx).round() as usize;
+        let ch = ramp_chars.get(idx).copied().unwrap_or(' ');
 
         if let Some(cell) = row_cells.get_mut(col as usize) {
-            *cell = Cell::new(ramp_chars[idx], avg_rgb);
+            *cell = Cell::new(ch, avg_rgb);
         }
     }
 }
