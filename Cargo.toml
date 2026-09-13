@@ -1,7 +1,7 @@
 [package]
 name = "iascii"
-version = "0.1.1"
-edition = "2024"
+version = "0.1.2"
+edition = "2021"
 description = "A high-performance, image-to-ASCII/ANSI converter for CLI, web, and server environments."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/GauravPawar101/iascii"
