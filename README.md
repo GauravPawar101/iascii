@@ -1,38 +1,46 @@
 # iascii
 
-A small Rust library for converting a decoded RGB image into colored ASCII/ANSI
-terminal art.
+A small, fast Rust library for converting a decoded RGB image into ASCII or
+colored ANSI terminal art.
 
 You decode the image yourself (with the `image` crate, or anything else) and hand
 this library the raw `width`, `height`, and RGB8 bytes. It maps blocks of pixels
-down to a grid of characters, each carrying its own color, and can render that grid
-into an ANSI-escaped string ready to `print!()`.
-
-> Rename this crate in `Cargo.toml` to whatever you're actually calling it —
-> `iascii` is just a placeholder used throughout this README.
+down to a grid of characters, each carrying its own color, and renders that grid
+either as **plain ASCII** or as **ANSI-escaped color** — as a `String` (batch) or
+streamed straight to any writer (streaming).
 
 ---
 
 ## Features
 
-- **Sync core, no forced runtime.** The primary `convert_image` function is a
-  plain synchronous call — no tokio, no hidden threads. Call it from anywhere,
-  including inside `spawn_blocking` if you're in an async context.
+- **Two render formats, one grid.** Convert once, then render as escape-free
+  ASCII (`RenderFormat::Ascii`) or color at three ANSI depths
+  (`RenderFormat::Ansi(ColorDepth::…)`) — chosen at render time, not conversion time.
+- **Batch *and* streaming output.** `render` / `render_ascii` / `render_ansi`
+  return a `String`; `render_to` / `render_ascii_to` / `render_ansi_to` write row
+  by row to any `std::io::Write`. Streaming keeps peak extra memory at roughly
+  **one row**, so you can generate output far larger than RAM.
+- **Good → Best quality tiers.** `Quality::Good` uses a fixed-point luminance
+  fast path, `Better` (default) uses perceptual floating-point luminance, and
+  `Best` adds horizontal error-diffusion dithering for visibly smoother gradients.
+- **Sensible built-in glyphs.** `Ramp::ascii()` (` .:-=+*#%@`, the default) is a
+  clean, evenly spaced, ambiguity-free ASCII ramp; `Ramp::blocks()` (` ░▒▓█`) gives
+  contiguous shading. Plus the classic presets and fully custom ramps.
+- **Sync core, no forced runtime.** `convert_image` is a plain synchronous call —
+  no tokio, no hidden threads. Call it from anywhere, including inside
+  `spawn_blocking` if you're in an async context.
 - **Optional parallelism, entirely caller-controlled.** Behind the `parallel`
   feature flag, `convert_with_pool` accepts an `Option<&rayon::ThreadPool>`. Pass
   your own pool, or `None` to fall back to the sequential path — the crate never
   touches rayon's global pool implicitly, so it won't oversubscribe threads when
   called concurrently from multiple places.
 - **Structured output, not just a string.** Conversion produces a `Grid` of
-  `Cell { ch, color }` values. Rendering to an ANSI string is a separate step
-  (`render_ansi`), so you can post-process the grid yourself (HTML, a TUI
+  `Cell { ch, color }` values, so you can post-process it yourself (HTML, a TUI
   framework, a diff) without ever touching escape codes.
-- **Configurable everything:** character ramp (several built-in presets or a
-  custom charset), luminance formula (plain average, BT.601, BT.709), light or
-  dark ramp orientation, terminal aspect-ratio correction, output sizing, and
-  (with `parallel`) the row-count threshold before concurrency kicks in.
-- **Three ANSI color depths** at render time — truecolor, 256-color, and
-  16-color — chosen independently of how the image was converted.
+- **Configurable everything:** character ramp, luminance formula (plain average,
+  BT.601, BT.709), light or dark ramp orientation, terminal aspect-ratio
+  correction, output sizing, and (with `parallel`) the row-count threshold before
+  concurrency kicks in.
 
 ## What this crate does *not* do
 
@@ -47,16 +55,16 @@ into an ANSI-escaped string ready to `print!()`.
 
 ```toml
 [dependencies]
-iascii = { version = "0.1.0" }        # or a version once published
+iascii = "0.1"
 
 # Optional: enables `convert_with_pool` and pulls in rayon.
-iascii = { path = "0.1.0", features = ["parallel"] }
+# iascii = { version = "0.1", features = ["parallel"] }
 ```
 
 ## Quick start
 
 ```rust
-use iascii::{Config, ColorDepth, convert_image, render_ansi};
+use iascii::{ColorDepth, Config, RenderFormat, convert_image, render};
 
 fn main() -> iascii::Result<()> {
     // However you got these — e.g. via the `image` crate:
@@ -67,14 +75,36 @@ fn main() -> iascii::Result<()> {
     let height = 4;
     let buf: Vec<u8> = vec![128; (width * height * 3) as usize]; // flat RGB8 bytes
 
-    let config = Config::builder()
-        .max_width(80)
-        .build()?;
-
+    let config = Config::builder().max_width(80).build()?;
     let grid = convert_image(width, height, &buf, &config)?;
-    let ansi = render_ansi(&grid, ColorDepth::TrueColor);
 
-    print!("{ansi}");
+    // Pick a format at render time.
+    print!("{}", render(&grid, RenderFormat::Ascii));
+    println!("{}", render(&grid, RenderFormat::Ansi(ColorDepth::TrueColor)));
+    Ok(())
+}
+```
+
+### Streaming large output
+
+`render_to` writes row by row, so the full output never has to exist in memory —
+useful for very large grids, log files, or piping to another process:
+
+```rust
+use iascii::{ColorDepth, Config, RenderFormat, convert_image, render_to};
+
+fn main() -> iascii::Result<()> {
+    let (width, height) = (1920, 1080);
+    let buf: Vec<u8> = vec![0; width * height * 3];
+
+    let config = Config::builder()
+        .explicit_dimensions(1000, 600) // big character grid
+        .build()?;
+    let grid = convert_image(width, height, &buf, &config)?;
+
+    // Straight to stdout, a file, a socket, a compressor — anything `Write`.
+    let mut out = std::io::stdout().lock();
+    render_to(&grid, RenderFormat::Ansi(ColorDepth::Ansi256), &mut out)?;
     Ok(())
 }
 ```
@@ -82,7 +112,7 @@ fn main() -> iascii::Result<()> {
 ## Parallel usage (feature `parallel`)
 
 ```rust
-use iascii::{Config, ColorDepth, convert_with_pool, render_ansi};
+use iascii::{ColorDepth, Config, RenderFormat, convert_with_pool, render};
 
 fn main() -> iascii::Result<()> {
     let width = 1920;
@@ -98,7 +128,7 @@ fn main() -> iascii::Result<()> {
     let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
 
     let grid = convert_with_pool(width, height, &buf, &config, Some(&pool))?;
-    println!("{}", render_ansi(&grid, ColorDepth::Ansi256));
+    println!("{}", render(&grid, RenderFormat::Ansi(ColorDepth::Ansi256)));
     Ok(())
 }
 ```
@@ -110,6 +140,45 @@ regardless of which one runs.
 
 ---
 
+## Rendering
+
+Conversion and rendering are separate steps, so one `Grid` can be rendered in as
+many formats as you like.
+
+### Formats
+
+| Format | Entry point | Output |
+|---|---|---|
+| Plain ASCII | `RenderFormat::Ascii`, `render_ascii`, `render_ascii_to` | Glyphs + `\n` only, no escape sequences |
+| ANSI color | `RenderFormat::Ansi(depth)`, `render_ansi`, `render_ansi_to` | Glyphs wrapped in color escapes |
+
+ANSI color depths (chosen at render time, independent of conversion):
+
+```rust
+use iascii::ColorDepth;
+
+ColorDepth::TrueColor; // 24-bit RGB:  \x1b[38;2;R;G;Bm
+ColorDepth::Ansi256;   // 256-color:    \x1b[38;5;Nm
+ColorDepth::Ansi16;    // 16-color:     \x1b[30m–\x1b[37m, \x1b[90m–\x1b[97m
+```
+
+`Grid` also implements `Display`, which yields the plain escape-free rendering, so
+`println!("{grid}")` just works.
+
+### Batch vs. streaming
+
+| | Batch | Streaming |
+|---|---|---|
+| Functions | `render`, `render_ascii`, `render_ansi` | `render_to`, `render_ascii_to`, `render_ansi_to` |
+| Returns | `String` | `Result<(), ImageError>` |
+| Memory | Whole rendering in memory | ~one row |
+| Use when | Output is small, or you need the full string anyway | Output is large, or goes straight to a file/socket/stdout |
+
+Both paths produce identical bytes; the streaming functions simply avoid
+materializing the result.
+
+---
+
 ## Configuration reference
 
 Built via `Config::builder()...build()`, which returns `Result<Config, ImageError>`
@@ -117,20 +186,44 @@ and validates everything in one place.
 
 | Setter | Default | What it controls |
 |---|---|---|
-| `.ramp(RampType)` | `RampType::Dark(Ramp::smooth_gradient())` | Which characters represent which brightness, and whether bright pixels map to dense or sparse characters |
+| `.ramp(RampType)` | `RampType::Dark(Ramp::ascii())` | Which characters represent which brightness, and whether bright pixels map to dense or sparse characters |
 | `.luminance_method(LuminanceMethod)` | `Bt601` | How RGB is reduced to a single brightness value — `Average`, `Bt601`, or `Bt709` |
+| `.quality(Quality)` | `Better` | Speed/fidelity tier — `Good`, `Better`, or `Best` (see below) |
 | `.aspect_ratio_correction(f32)` | `0.5` | Compensates for terminal characters being taller than they are wide |
 | `.max_width(usize)` / `.explicit_dimensions(w, h)` | `MaxWidth(80)` | Output sizing — either a max width with height derived automatically, or exact dimensions |
 | `.parallel_threshold(usize)` | `100` | (with `parallel`) Minimum output rows before a supplied thread pool is actually used |
 
+### Quality tiers
+
+| Tier | Brightness math | Dithering | When to use |
+|---|---|---|---|
+| `Quality::Good` | Fixed-point integers (no `f32`) | No | Previews, huge images, hot loops |
+| `Quality::Better` *(default)* | Perceptual `f32` (BT.601/BT.709) | No | Balanced daily use |
+| `Quality::Best` | Perceptual `f32` | Horizontal error diffusion | Smoothest gradients, final output |
+
+`Best` diffuses quantization error left-to-right within each row, turning a
+fractional brightness into a mix of the two neighbouring glyphs instead of
+snapping to one. Diffusion is deliberately **row-local**, so rows stay
+independent and sequential vs. `parallel` output remains byte-identical.
+
+Quality affects only brightness mapping — never output dimensions.
+
 ### Ramps
 
-`RampType::Dark(ramp)` maps bright pixels to visually dense characters (the
-right choice for the typical dark-background terminal). `RampType::Light(ramp)`
-inverts that, for light-background output.
+`RampType::Dark(ramp)` maps bright pixels to visually dense characters (the right
+choice for the typical dark-background terminal). `RampType::Light(ramp)` inverts
+that, for light-background output.
 
-Built-in `Ramp` presets: `smooth_gradient()`, `quantized()`, `inverted_smooth()`,
-`high_variety()`, `seven_tier()`, `emoji_brightness()`, `celestial()`.
+Built-in `Ramp` presets:
+
+| Preset | Glyphs | Notes |
+|---|---|---|
+| `ascii()` *(default)* | ` .:-=+*#%@` | Clean, evenly spaced, printable ASCII — copy/paste and log safe |
+| `blocks()` | ` ░▒▓█` | Contiguous Unicode block shading |
+| `smooth_gradient()` | 70 glyphs | Classic fine-grained density ramp |
+| `quantized()`, `seven_tier()` | repeated blocks | Coarse, posterized looks |
+| `inverted_smooth()`, `high_variety()` | mixed | Classic alternatives |
+| `emoji_brightness()`, `celestial()` | emoji | Best-effort (see the limitation below) |
 
 Custom ramps:
 
@@ -147,18 +240,6 @@ let ramp = RampType::Dark(Ramp::new_custom(" .:-=+*#%@")?);
 > ramps are best-effort for this reason — prefer single-codepoint custom ramps
 > if exact alignment matters.
 
-### Color depth
-
-Chosen at render time, independent of conversion:
-
-```rust
-use iascii::ColorDepth;
-
-render_ansi(&grid, ColorDepth::TrueColor); // 24-bit, \x1b[38;2;R;G;Bm
-render_ansi(&grid, ColorDepth::Ansi256);   // 256-color palette
-render_ansi(&grid, ColorDepth::Ansi16);    // basic 16-color, widest terminal support
-```
-
 ---
 
 ## How it works
@@ -168,12 +249,14 @@ render_ansi(&grid, ColorDepth::Ansi16);    // basic 16-color, widest terminal su
 2. **Compute target size** — source dimensions + your sizing config + aspect
    correction → a concrete `(grid_width, grid_height)` in character cells.
 3. **Sample, row by row** — for each output cell, average the block of source
-   pixels it represents, reduce that to a luminance value, and look up the
+   pixels it represents, reduce that to a luminance value (integer for `Good`,
+   perceptual for `Better`/`Best`), apply dithering under `Best`, and look up the
    matching ramp character. Sequential by default; row-parallel with `parallel`.
 4. **Return a `Grid`** — structured `Cell { ch, color }` data. Valid to consume
-   directly (e.g. in a TUI) without ever rendering to ANSI.
-5. **Render (optional)** — `render_ansi` walks the grid, tracks the active
-   color to avoid redundant escape codes, and emits a printable `String`.
+   directly (e.g. in a TUI) without ever rendering to text.
+5. **Render (optional, in any format)** — batch to a `String`, or stream row by
+   row to a writer. The ANSI path tracks the active color so redundant escape
+   codes are skipped.
 
 Because output resolution is a small character grid rather than the source's
 full pixel count, expect a blocky, color-approximate impression of the image —
@@ -185,10 +268,10 @@ that's inherent to ASCII/ANSI art, not a bug.
 
 All fallible entry points return `iascii::Result<T>` (`Result<T, ImageError>`).
 Notable variants: `ZeroSizedImage`, `BufferSizeMismatch`, `EmptyRamp`,
-`InvalidRamp`, `InvalidAspectRatio`.
+`InvalidRamp`, `InvalidAspectRatio`, and `Io` (propagated from streaming writers).
 
 ---
 
 ## License
 
-Add your license of choice here (MIT / Apache-2.0 are common for Rust crates).
+Licensed under either of MIT or Apache-2.0, at your option.

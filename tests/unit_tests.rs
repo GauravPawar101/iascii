@@ -1,10 +1,7 @@
-use iascii::{
-    Cell, ColorDepth, Config, ConfigBuilder, ImageError, LuminanceMethod, OutputSizing, Ramp,
-    RampType, Rgb, convert_image, render_ansi,
-};
+use iascii::{ConfigBuilder, ImageError, LuminanceMethod, OutputSizing, Ramp, Rgb};
 
 #[cfg(feature = "parallel")]
-use iascii::convert_with_pool;
+use iascii::{convert_image, convert_with_pool};
 
 // --- Config Tests ---
 
@@ -115,8 +112,8 @@ fn test_parallel_sequential_parity() {
     let height = 8;
     // Create a deterministic checkerboard pattern byte buffer
     let mut buf = vec![0u8; (width * height * 3) as usize];
-    for i in 0..buf.len() {
-        buf[i] = (i % 256) as u8;
+    for (i, byte) in buf.iter_mut().enumerate() {
+        *byte = (i % 256) as u8;
     }
 
     let config = ConfigBuilder::new()

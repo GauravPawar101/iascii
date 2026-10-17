@@ -19,4 +19,7 @@ pub enum ImageError {
 
     #[error("Invalid configuration error")]
     InvalidConfiguration(String),
+
+    #[error("I/O error while writing rendered output: {0}")]
+    Io(#[from] std::io::Error),
 }

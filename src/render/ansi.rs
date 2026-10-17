@@ -1,6 +1,8 @@
-use crate::grid::{Grid, Rgb};
+use crate::error::ImageError;
+use crate::grid::{Cell, Grid, Rgb};
 use crate::render::ColorDepth;
 use std::fmt::Write;
+use std::io::Write as IoWrite;
 
 /// Standard 16-color ANSI palette RGB lookup table.
 static ANSI16_PALETTE: [(u8, u8, u8); 16] = [
@@ -104,47 +106,73 @@ fn rgb_to_ansi256(rgb: Rgb) -> u8 {
     }
 }
 
-/// Converts a completed `Grid` into an ANSI-formatted string.
+/// Appends one ANSI-rendered row (with its trailing reset + newline) to `output`.
+///
+/// Color-state tracking is scoped to the row because every row ends with a reset,
+/// so each row can be rendered independently — which is also what lets the
+/// streaming path emit rows without buffering the whole grid.
+fn write_ansi_row(row: &[Cell], depth: ColorDepth, output: &mut String) {
+    let mut current_color = ActiveColor::Reset;
+
+    for cell in row {
+        let target_color = match depth {
+            ColorDepth::TrueColor => ActiveColor::TrueColor(cell.color),
+            ColorDepth::Ansi256 => ActiveColor::Ansi256(rgb_to_ansi256(cell.color)),
+            ColorDepth::Ansi16 => ActiveColor::Ansi16(rgb_to_ansi16(cell.color)),
+        };
+
+        // Only emit escape sequences when color state actually changes
+        if target_color != current_color {
+            match target_color {
+                ActiveColor::TrueColor(c) => {
+                    let _ = write!(output, "\x1b[38;2;{};{};{}m", c.r, c.g, c.b);
+                }
+                ActiveColor::Ansi256(code) => {
+                    let _ = write!(output, "\x1b[38;5;{code}m");
+                }
+                ActiveColor::Ansi16(code) => {
+                    let escape_code = if code < 8 { 30 + code } else { 90 + (code - 8) };
+                    let _ = write!(output, "\x1b[{escape_code}m");
+                }
+                ActiveColor::Reset => {
+                    output.push_str("\x1b[0m");
+                }
+            }
+            current_color = target_color;
+        }
+
+        output.push(cell.ch);
+    }
+
+    // Reset terminal color state at the end of each row
+    output.push_str("\x1b[0m\n");
+}
+
+/// Converts a completed `Grid` into an ANSI-formatted `String` (batch rendering).
+///
+/// For large grids, prefer [`render_ansi_to`], which streams to a writer instead
+/// of building the full escaped string in memory.
 pub fn render_ansi(grid: &Grid, depth: ColorDepth) -> String {
     let capacity = (grid.height() as usize) * ((grid.width() as usize) * 12 + 8);
     let mut output = String::with_capacity(capacity);
-    let mut current_color = ActiveColor::Reset;
-
     for row in grid.rows() {
-        for cell in row {
-            let target_color = match depth {
-                ColorDepth::TrueColor => ActiveColor::TrueColor(cell.color),
-                ColorDepth::Ansi256 => ActiveColor::Ansi256(rgb_to_ansi256(cell.color)),
-                ColorDepth::Ansi16 => ActiveColor::Ansi16(rgb_to_ansi16(cell.color)),
-            };
-
-            // Only emit escape sequences when color state actually changes
-            if target_color != current_color {
-                match target_color {
-                    ActiveColor::TrueColor(c) => {
-                        let _ = write!(output, "\x1b[38;2;{};{};{}m", c.r, c.g, c.b);
-                    }
-                    ActiveColor::Ansi256(code) => {
-                        let _ = write!(output, "\x1b[38;5;{code}m");
-                    }
-                    ActiveColor::Ansi16(code) => {
-                        let escape_code = if code < 8 { 30 + code } else { 90 + (code - 8) };
-                        let _ = write!(output, "\x1b[{escape_code}m");
-                    }
-                    ActiveColor::Reset => {
-                        output.push_str("\x1b[0m");
-                    }
-                }
-                current_color = target_color;
-            }
-
-            output.push(cell.ch);
-        }
-
-        // Reset terminal color state at the end of each row
-        output.push_str("\x1b[0m\n");
-        current_color = ActiveColor::Reset;
+        write_ansi_row(row, depth, &mut output);
     }
-
     output
+}
+
+/// Streaming counterpart to [`render_ansi`]: writes escaped rows to `out` as they
+/// are produced, holding only one row of scratch space at a time.
+pub fn render_ansi_to<W: IoWrite + ?Sized>(
+    grid: &Grid,
+    depth: ColorDepth,
+    out: &mut W,
+) -> Result<(), ImageError> {
+    let mut scratch = String::with_capacity((grid.width() as usize) * 20 + 8);
+    for row in grid.rows() {
+        scratch.clear();
+        write_ansi_row(row, depth, &mut scratch);
+        out.write_all(scratch.as_bytes())?;
+    }
+    Ok(())
 }

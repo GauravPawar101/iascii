@@ -68,6 +68,7 @@ impl Grid {
     }
 
     /// Constructs a `Grid` from an existing flat vector of cells after verifying size consistency.
+    #[allow(dead_code)] // exercised by unit tests and doctests; not used by the conversion pipelines
     pub(crate) fn from_cells(
         width: u32,
         height: u32,
@@ -171,6 +172,9 @@ impl Grid {
     }
 
     /// Returns the underlying flat mutable slice of all cells.
+    ///
+    /// Only consumed by the `parallel` pipeline, which chunks it across worker threads.
+    #[cfg_attr(not(feature = "parallel"), allow(dead_code))]
     #[inline]
     pub(crate) fn as_mut_slice(&mut self) -> &mut [Cell] {
         &mut self.cells

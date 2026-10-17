@@ -4,6 +4,13 @@ use std::borrow::Cow;
 // Default Static Ramp Sequences
 pub const SMOOTH_GRADIENT: &str =
     " .'`^\",:;Il!i><~+_-?][}{1)(|\\/jtfrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+/// Clean, strictly density-ordered printable-ASCII ramp. Ten evenly spaced
+/// glyphs with no punctuation ambiguity — the sensible default for plain-ASCII
+/// output that has to survive copy/paste, logs, or fixed-width files.
+pub const ASCII_RAMP: &str = " .:-=+*#%@";
+/// Unicode block-shading ramp (`░▒▓█`). Renders as a smooth, contiguous
+/// gradient in any terminal with basic box-drawing/block font coverage.
+pub const BLOCKS_RAMP: &str = " ░▒▓█";
 pub const QUANTIZED_RAMP: &str =
     "     .....:::::-----+++++*****=====%%%%%#####88888WWWWWMMMMM$$$$$@@@@@";
 pub const INVERTED_SMOOTH: &str =
@@ -24,6 +31,10 @@ pub const CELESTIAL: &str = "⬛⬛⬛⬛⬛⬛⬛🌑🌑🌑🌑🌑🌑🌑�
 /// current implementation rather than something silently miscomputed.
 #[derive(Debug)]
 pub enum Ramp {
+    /// Clean density-ordered ASCII glyphs (` .:-=+*#%@`).
+    Ascii(&'static str),
+    /// Unicode block shading (` ░▒▓█`).
+    Blocks(&'static str),
     SmoothGradient(&'static str),
     QuantizedRamp(&'static str),
     InvertedSmoothGradient(&'static str),
@@ -35,6 +46,14 @@ pub enum Ramp {
 }
 
 impl Ramp {
+    /// Clean, evenly spaced printable-ASCII ramp (` .:-=+*#%@`). The default.
+    pub fn ascii() -> Self {
+        Self::Ascii(ASCII_RAMP)
+    }
+    /// Unicode block-shading ramp (` ░▒▓█`).
+    pub fn blocks() -> Self {
+        Self::Blocks(BLOCKS_RAMP)
+    }
     pub fn smooth_gradient() -> Self {
         Self::SmoothGradient(SMOOTH_GRADIENT)
     }
@@ -74,7 +93,9 @@ impl Ramp {
     #[inline]
     pub fn as_str(&self) -> &str {
         match self {
-            Self::SmoothGradient(s)
+            Self::Ascii(s)
+            | Self::Blocks(s)
+            | Self::SmoothGradient(s)
             | Self::QuantizedRamp(s)
             | Self::InvertedSmoothGradient(s)
             | Self::HighVariety(s)

@@ -29,6 +29,28 @@ impl LuminanceMethod {
     }
 }
 
+/// Rendering quality tier trading speed for fidelity.
+///
+/// Quality affects only *how* brightness is computed and mapped onto the ramp,
+/// never the output dimensions — combine it freely with [`OutputSizing`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Quality {
+    /// Fastest path: integer-only luminance arithmetic and direct ramp lookup.
+    /// Best for previews, very large images, or hot loops.
+    Good,
+    /// Perceptual floating-point luminance (BT.601/BT.709 as configured) with
+    /// direct ramp lookup. The default balance of speed and fidelity.
+    #[default]
+    Better,
+    /// Perceptual luminance plus horizontal Floyd–Steinberg-style error
+    /// diffusion across each row, producing visibly smoother gradients on
+    /// low-arity ramps. Slightly slower than [`Quality::Better`].
+    ///
+    /// Error diffusion is confined to a single row, so sequential and
+    /// `parallel` conversions still produce byte-identical output.
+    Best,
+}
+
 /// Target output dimensions for ASCII conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputSizing {
@@ -43,6 +65,7 @@ pub enum OutputSizing {
 pub struct Config {
     pub ramp: RampType,
     pub luminance_method: LuminanceMethod,
+    pub quality: Quality,
     pub aspect_ratio_correction: f32,
     pub output_sizing: OutputSizing,
     pub parallel_threshold: usize,
@@ -60,6 +83,7 @@ impl Config {
 pub struct ConfigBuilder {
     ramp: Option<RampType>,
     luminance_method: LuminanceMethod,
+    quality: Quality,
     aspect_ratio_correction: f32,
     output_sizing: OutputSizing,
     parallel_threshold: usize,
@@ -68,8 +92,9 @@ pub struct ConfigBuilder {
 impl Default for ConfigBuilder {
     fn default() -> Self {
         Self {
-            ramp: Some(RampType::Dark(Ramp::smooth_gradient())),
+            ramp: Some(RampType::Dark(Ramp::ascii())),
             luminance_method: LuminanceMethod::default(),
+            quality: Quality::default(),
             aspect_ratio_correction: 0.5, // Standard terminal characters (~2:1 height:width ratio)
             output_sizing: OutputSizing::MaxWidth(80),
             parallel_threshold: 100, // Minimum rows required to activate thread pool
@@ -89,6 +114,12 @@ impl ConfigBuilder {
 
     pub fn luminance_method(mut self, method: LuminanceMethod) -> Self {
         self.luminance_method = method;
+        self
+    }
+
+    /// Sets the speed/fidelity tier used during conversion (default [`Quality::Better`]).
+    pub fn quality(mut self, quality: Quality) -> Self {
+        self.quality = quality;
         self
     }
 
@@ -150,6 +181,7 @@ impl ConfigBuilder {
         Ok(Config {
             ramp,
             luminance_method: self.luminance_method,
+            quality: self.quality,
             aspect_ratio_correction: self.aspect_ratio_correction,
             output_sizing: self.output_sizing,
             parallel_threshold: self.parallel_threshold,
