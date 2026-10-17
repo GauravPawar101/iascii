@@ -31,7 +31,7 @@ fn test_config_builder_defaults() {
     assert_eq!(config.luminance_method, LuminanceMethod::Bt601);
     assert_eq!(config.aspect_ratio_correction, 0.5);
     assert_eq!(config.output_sizing, OutputSizing::MaxWidth(80));
-    assert_eq!(config.parallel_threshold, 100);
+    assert_eq!(config.parallel_threshold, 4096);
 }
 
 #[test]

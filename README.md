@@ -121,7 +121,7 @@ fn main() -> iascii::Result<()> {
 
     let config = Config::builder()
         .max_width(160)
-        .parallel_threshold(50) // only parallelize if the output has >= 50 rows
+        .parallel_threshold(50) // only parallelize if the output has >= 50 cells
         .build()?;
 
     // Bring your own pool — the crate never touches rayon's global pool.
@@ -133,10 +133,14 @@ fn main() -> iascii::Result<()> {
 }
 ```
 
-Passing `None` instead of `Some(&pool)` — or an image whose row count doesn't
-clear `parallel_threshold` — transparently falls back to the exact same
+Passing `None` instead of `Some(&pool)` — or an output that doesn't clear
+`parallel_threshold` cells — transparently falls back to the exact same
 sequential code path used by `convert_image`, so output is always identical
 regardless of which one runs.
+
+Work is split by row for `Quality::Best` (its error diffusion is row-local) and by
+cell otherwise, so wide-but-short grids parallelize instead of staying
+single-threaded.
 
 ---
 
@@ -191,7 +195,7 @@ and validates everything in one place.
 | `.quality(Quality)` | `Better` | Speed/fidelity tier — `Good`, `Better`, or `Best` (see below) |
 | `.aspect_ratio_correction(f32)` | `0.5` | Compensates for terminal characters being taller than they are wide |
 | `.max_width(usize)` / `.explicit_dimensions(w, h)` | `MaxWidth(80)` | Output sizing — either a max width with height derived automatically, or exact dimensions |
-| `.parallel_threshold(usize)` | `100` | (with `parallel`) Minimum output rows before a supplied thread pool is actually used |
+| `.parallel_threshold(usize)` | `4096` | (with `parallel`) Minimum output **cells** before a supplied thread pool is actually used |
 
 ### Quality tiers
 
@@ -251,7 +255,9 @@ let ramp = RampType::Dark(Ramp::new_custom(" .:-=+*#%@")?);
 3. **Sample, row by row** — for each output cell, average the block of source
    pixels it represents, reduce that to a luminance value (integer for `Good`,
    perceptual for `Better`/`Best`), apply dithering under `Best`, and look up the
-   matching ramp character. Sequential by default; row-parallel with `parallel`.
+   matching ramp character. The column → source-x geometry is computed once per
+   conversion and shared across all rows and threads; row geometry is computed
+   once per row. Sequential by default; concurrent with `parallel`.
 4. **Return a `Grid`** — structured `Cell { ch, color }` data. Valid to consume
    directly (e.g. in a TUI) without ever rendering to text.
 5. **Render (optional, in any format)** — batch to a `String`, or stream row by

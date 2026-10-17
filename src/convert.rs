@@ -1,7 +1,7 @@
 use crate::config::{Config, OutputSizing};
 use crate::error::ImageError;
 use crate::grid::Grid;
-use crate::sampling::fill_row;
+use crate::sampling::Sampler;
 
 /// Number of bytes per pixel (RGB8 format).
 pub(crate) const CHANNELS: usize = 3;
@@ -67,24 +67,24 @@ pub fn convert_image(
     let mut grid = Grid::new(grid_width, grid_height);
 
     // 5. Precompute the ramp's character sequence once for the whole conversion, rather
-    // than reallocating it inside fill_row on every single row.
+    // than reallocating it inside fill_row on every single row. The `Sampler` also
+    // precomputes the column → source-x table once for the entire grid.
     let ramp_chars: Vec<char> = config.ramp.inner().as_str().chars().collect();
+    let sampler = Sampler::new(
+        buf,
+        width,
+        height,
+        CHANNELS,
+        grid_width,
+        grid_height,
+        config,
+        &ramp_chars,
+    );
 
     // 6. Row-by-row filling
     for row_idx in 0..grid_height {
         if let Some(row_cells) = grid.row_mut(row_idx) {
-            fill_row(
-                row_idx,
-                row_cells,
-                buf,
-                width,
-                height,
-                CHANNELS,
-                grid_width,
-                grid_height,
-                config,
-                &ramp_chars,
-            );
+            sampler.fill_row(row_idx, row_cells);
         }
     }
 

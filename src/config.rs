@@ -68,6 +68,9 @@ pub struct Config {
     pub quality: Quality,
     pub aspect_ratio_correction: f32,
     pub output_sizing: OutputSizing,
+    /// Minimum number of output cells before a caller-supplied thread pool is used
+    /// (only meaningful with the `parallel` feature). Gating on cells rather than rows
+    /// lets wide, short grids parallelize instead of staying effectively single-threaded.
     pub parallel_threshold: usize,
 }
 
@@ -97,7 +100,7 @@ impl Default for ConfigBuilder {
             quality: Quality::default(),
             aspect_ratio_correction: 0.5, // Standard terminal characters (~2:1 height:width ratio)
             output_sizing: OutputSizing::MaxWidth(80),
-            parallel_threshold: 100, // Minimum rows required to activate thread pool
+            parallel_threshold: 4096, // Minimum output cells before the thread pool is used
         }
     }
 }
@@ -143,8 +146,9 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn parallel_threshold(mut self, min_rows: usize) -> Self {
-        self.parallel_threshold = min_rows;
+    /// Minimum output cells before a supplied thread pool is actually used.
+    pub fn parallel_threshold(mut self, min_cells: usize) -> Self {
+        self.parallel_threshold = min_cells;
         self
     }
 

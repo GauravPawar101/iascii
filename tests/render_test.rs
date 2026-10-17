@@ -241,3 +241,31 @@ fn best_quality_parallel_parity() {
 
     assert_eq!(seq, par);
 }
+
+#[cfg(feature = "parallel")]
+#[test]
+fn parallel_parity_across_cell_chunk_boundaries() {
+    // 30x40 = 1200 cells: split into 512-cell work items that cut through the
+    // middle of rows, exercising the flat cell-splitting path for Good/Better.
+    let buf = patterned(60, 80);
+    for quality in [Quality::Good, Quality::Better, Quality::Best] {
+        let config = ConfigBuilder::new()
+            .quality(quality)
+            .explicit_dimensions(30, 40)
+            .parallel_threshold(1)
+            .build()
+            .unwrap();
+
+        let seq = convert_image(60, 80, &buf, &config).unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(3)
+            .build()
+            .unwrap();
+        let par = iascii::convert_with_pool(60, 80, &buf, &config, Some(&pool)).unwrap();
+
+        assert_eq!(
+            seq, par,
+            "quality {quality:?} must stay identical across chunk boundaries"
+        );
+    }
+}
